@@ -1,0 +1,11 @@
+app:
+  cors:
+    allowed-origins:
+      # Reemplazar por la URL pública del frontend
+      - https://YOUR-FRONTEND-URL
+  mp:
+    # Reemplazar por la URL pública del backend utilizada para el callback de Mercado Pago
+    redirect-uri: https://YOUR-BACKEND-URL/mp/callback
+  api:
+    # Reemplazar por la URL pública del backend
+    uri: https://YOUR-BACKEND-URL

@@ -1,0 +1,80 @@
+package io.github.veron_santiago.backend.service.implementation;
+
+import io.github.veron_santiago.backend.persistence.entity.Company;
+import io.github.veron_santiago.backend.persistence.repository.ICompanyRepository;
+import io.github.veron_santiago.backend.presentation.dto.auth.AuthRequest;
+import io.github.veron_santiago.backend.presentation.dto.auth.AuthResponse;
+import io.github.veron_santiago.backend.service.exception.ErrorMessages;
+import io.github.veron_santiago.backend.service.exception.ObjectNotFoundException;
+import io.github.veron_santiago.backend.util.JwtUtil;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserDetailsServiceImpl implements UserDetailsService {
+
+    private final JwtUtil jwtUtil;
+    private final ICompanyRepository companyRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public UserDetailsServiceImpl(JwtUtil jwtUtil, ICompanyRepository companyRepository, PasswordEncoder passwordEncoder) {
+        this.jwtUtil = jwtUtil;
+        this.companyRepository = companyRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String nameOrEmail) throws UsernameNotFoundException {
+        Company company;
+        if (nameOrEmail.matches("\\d+")) {
+            Long id = Long.valueOf(nameOrEmail);
+            company = companyRepository.findById(id)
+                    .orElseThrow(() -> new ObjectNotFoundException(ErrorMessages.COMPANY_NOT_FOUND.getMessage()));
+        } else {
+            company = companyRepository.findByCompanyNameOrEmail(nameOrEmail)
+                    .orElseThrow(() -> new ObjectNotFoundException(
+                            "Compañia no encontrada con nombre o email: " + nameOrEmail));
+        }
+        return User.builder()
+                .username(String.valueOf(company.getId()))
+                .password(company.getPassword())
+                .build();
+    }
+
+    private Authentication authenticate(String nameOrEmail, String password){
+
+        Company company = companyRepository.findByCompanyNameOrEmail(nameOrEmail)
+                .orElseThrow(() -> new BadCredentialsException("Nombre o email inválido"));
+
+        if(!passwordEncoder.matches(password, company.getPassword())){
+            throw new BadCredentialsException("Contraseña invalida");
+        }
+        return new UsernamePasswordAuthenticationToken(String.valueOf(company.getId()), company.getPassword());
+    }
+
+    public AuthResponse loginUser(AuthRequest authRequest){
+        String companyName = authRequest.companyName();
+        String password = authRequest.password();
+        boolean rememberMe = Boolean.TRUE.equals(authRequest.stayLogged());
+
+        Company company = companyRepository.findByCompanyNameOrEmail(companyName)
+                .orElseThrow(() -> new ObjectNotFoundException(ErrorMessages.COMPANY_NOT_FOUND.getMessage()));
+
+        if (!company.isVerified()) return new AuthResponse(companyName, "La compañia no está verificada. Compruebe su correo", null, false);
+
+        Authentication authentication = this.authenticate(companyName, password);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        String token = jwtUtil.createToken(authentication, rememberMe);
+        return new AuthResponse(companyName, "Inicio de sesión exitoso", token, true);
+    }
+
+}
